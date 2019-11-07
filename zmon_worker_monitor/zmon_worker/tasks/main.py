@@ -5,62 +5,65 @@ import functools
 import itertools
 import json
 import logging
+import math
 import random
 import re
-import requests
-import setproctitle
 import socket
 import sys
-import traceback
 import time
+import traceback
 import urllib
-from urllib3.util import parse_url
-import math
-import numpy
 from base64 import b64decode
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
-
 from bisect import bisect_left
-from collections import Callable, Counter
-from collections import defaultdict
-from datetime import timedelta, datetime
+from collections import Callable, Counter, defaultdict
+from datetime import datetime, timedelta
 from operator import itemgetter
 
+import eventlog
 import functional
 import jsonpath_rw
-import pytz
-import tokens
-import eventlog
+import numpy
 import opentracing
+import pytz
+import requests
+import setproctitle
+import tokens
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from opentracing_utils import extract_span_from_kwargs, trace
+from timeperiod import InvalidFormat, in_period
+from urllib3.util import parse_url
 
-from timeperiod import in_period, InvalidFormat
-from opentracing_utils import trace, extract_span_from_kwargs
-
-from zmon_worker_monitor import eventloghttp
-from zmon_worker_monitor import plugin_manager
+from zmon_worker_monitor import eventloghttp, plugin_manager
 from zmon_worker_monitor.redis_context_manager import RedisConnHandler
 from zmon_worker_monitor.zmon_worker.common import mathfun
-from zmon_worker_monitor.zmon_worker.common.eval import safe_eval, InvalidEvalExpression, ProtectedPartial
+from zmon_worker_monitor.zmon_worker.common.eval import (InvalidEvalExpression,
+                                                         ProtectedPartial,
+                                                         safe_eval)
 from zmon_worker_monitor.zmon_worker.common.http import get_user_agent
 from zmon_worker_monitor.zmon_worker.common.time_ import parse_timedelta
-from zmon_worker_monitor.zmon_worker.common.utils import flatten, PeriodicBufferedAction
+from zmon_worker_monitor.zmon_worker.common.utils import (
+    PeriodicBufferedAction, flatten)
 from zmon_worker_monitor.zmon_worker.encoder import JsonDataEncoder
 from zmon_worker_monitor.zmon_worker.errors import (
-    CheckError, AlertError, InsufficientPermissionsError, SecurityError, ResultSizeError)
-from zmon_worker_monitor.zmon_worker.notifications.http import NotifyHttp
+    AlertError, CheckError, InsufficientPermissionsError, ResultSizeError,
+    SecurityError)
+from zmon_worker_monitor.zmon_worker.notifications.google_hangouts_chat import \
+    NotifyGoogleHangoutsChat
 from zmon_worker_monitor.zmon_worker.notifications.hipchat import NotifyHipchat
-from zmon_worker_monitor.zmon_worker.notifications.google_hangouts_chat import NotifyGoogleHangoutsChat
+from zmon_worker_monitor.zmon_worker.notifications.http import NotifyHttp
 from zmon_worker_monitor.zmon_worker.notifications.hubot import Hubot
 from zmon_worker_monitor.zmon_worker.notifications.mail import Mail
-from zmon_worker_monitor.zmon_worker.notifications.notification import BaseNotification
+from zmon_worker_monitor.zmon_worker.notifications.notification import \
+    BaseNotification
+from zmon_worker_monitor.zmon_worker.notifications.opsgenie import \
+    NotifyOpsgenie
+from zmon_worker_monitor.zmon_worker.notifications.pagerduty import \
+    NotifyPagerduty
 from zmon_worker_monitor.zmon_worker.notifications.push import NotifyPush
 from zmon_worker_monitor.zmon_worker.notifications.slack import NotifySlack
 from zmon_worker_monitor.zmon_worker.notifications.sms import Sms
 from zmon_worker_monitor.zmon_worker.notifications.twilio import NotifyTwilio
-from zmon_worker_monitor.zmon_worker.notifications.pagerduty import NotifyPagerduty
-from zmon_worker_monitor.zmon_worker.notifications.opsgenie import NotifyOpsgenie
-
 
 logger = logging.getLogger(__name__)
 
@@ -969,8 +972,12 @@ class MainTask(object):
                         })
 
                     if serialized_data is not None:
-                        r = requests.put(url, data=serialized_data, timeout=timeout, headers=headers)
-                        r.raise_for_status()
+                        try:
+                            r = requests.put(url, data=serialized_data, timeout=timeout, headers=headers)
+                            r.raise_for_status()
+                        except requests.exceptions.ReadTimeout:
+                            logger.warning("Request to Data Service exceeded read timeout: %d. Not retrying...", timeout)
+                            current_span.set_tag('dataservice_read_timeout', True)
         except Exception as ex:
             logger.error('Error in data service send: url={} ex={}'.format(cls._dataservice_url, ex))
             raise
