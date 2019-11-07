@@ -976,7 +976,10 @@ class MainTask(object):
                             r = requests.put(url, data=serialized_data, timeout=timeout, headers=headers)
                             r.raise_for_status()
                         except requests.exceptions.ReadTimeout:
-                            logger.warning("Request to Data Service exceeded read timeout: %d. Not retrying...", timeout)
+                            logger.warning(
+                                "Request to Data Service exceeded read timeout: %d. Not retrying...",
+                                timeout
+                            )
                             current_span.set_tag('dataservice_read_timeout', True)
         except Exception as ex:
             logger.error('Error in data service send: url={} ex={}'.format(cls._dataservice_url, ex))
