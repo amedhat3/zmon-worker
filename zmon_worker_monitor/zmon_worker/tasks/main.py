@@ -977,8 +977,9 @@ class MainTask(object):
                             r.raise_for_status()
                         except requests.exceptions.ReadTimeout:
                             logger.warning(
-                                "Request to Data Service exceeded read timeout: %d. Not retrying...",
-                                timeout
+                                "Request to Data Service exceeded read timeout: %d. Not retrying... Data: %s",
+                                timeout,
+                                serialized_data
                             )
                             current_span.set_tag('dataservice_read_timeout', True)
         except Exception as ex:
